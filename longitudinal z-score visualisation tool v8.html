@@ -1,0 +1,1352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Longitudinal Z-Score Viewer</title>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <style>
+    :root {
+      --bg: #f6f8fb;
+      --card: #ffffff;
+      --line: #d9e0ea;
+      --text: #1c2430;
+      --muted: #617083;
+      --accent: #1f6feb;
+      --accent-soft: rgba(31, 111, 235, 0.14);
+      --warn: #b42318;
+      --good: #027a48;
+      --tag-green: #34C759;
+      --tag-orange: #FF9500;
+      --tag-red: #FF3B30;
+      --tag-indigo: #5856D6;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, Arial, Helvetica, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    .wrap {
+      max-width: 1850px;
+      margin: 0 auto;
+      padding: 16px;
+    }
+    .topbar {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      box-shadow: 0 8px 24px rgba(16, 24, 40, 0.05);
+      padding: 16px;
+    }
+    h1, h2, h3 { margin: 0 0 10px 0; }
+    h1 { font-size: 24px; }
+    h2 { font-size: 18px; }
+    h3 { font-size: 15px; }
+    .muted { color: var(--muted); }
+    .controls-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+      margin-top: 12px;
+    }
+    .control-group {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    label {
+      font-size: 13px;
+      color: var(--muted);
+    }
+    input[type="file"], input[type="number"], button {
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: white;
+      color: var(--text);
+      padding: 10px 12px;
+      font-size: 14px;
+    }
+    button {
+      cursor: pointer;
+      transition: 0.15s ease;
+    }
+    button:hover:not(:disabled) {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+    }
+    button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+    .main {
+      display: grid;
+      grid-template-columns: 1.65fr 1fr;
+      gap: 16px;
+    }
+    .plots {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    .plot-box {
+      min-height: 470px;
+    }
+    .right-col {
+      display: grid;
+      grid-template-rows: auto auto auto 1fr;
+      gap: 16px;
+      min-height: 0;
+    }
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .metric {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 10px;
+      background: #fbfcfe;
+    }
+    .metric .k {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+    .metric .v {
+      font-size: 18px;
+      font-weight: 700;
+    }
+    .table-wrap {
+      overflow: auto;
+      max-height: 620px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    thead th {
+      position: sticky;
+      top: 0;
+      background: #f8fafc;
+      z-index: 2;
+      text-align: left;
+      padding: 10px;
+      border-bottom: 1px solid var(--line);
+    }
+    tbody td {
+      padding: 9px 10px;
+      border-bottom: 1px solid #edf1f5;
+      vertical-align: top;
+    }
+    tbody tr {
+      cursor: pointer;
+    }
+    tbody tr:hover {
+      background: #f8fbff;
+    }
+    tbody tr.selected {
+      background: #eaf2ff;
+      outline: 2px solid rgba(31, 111, 235, 0.18);
+    }
+    .small {
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .badge {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      border: 1px solid var(--line);
+      background: #fcfdff;
+      margin-right: 6px;
+      margin-bottom: 6px;
+    }
+    .danger { color: var(--warn); }
+    .good { color: var(--good); }
+    .footer-note {
+      margin-top: 10px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .legend-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .swatch {
+      width: 12px;
+      height: 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(0,0,0,0.08);
+    }
+    @media (max-width: 1300px) {
+      .main, .topbar, .plots {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <section class="card">
+        <h1>Longitudinal z-score viewer</h1>
+        <div class="muted">
+          Upload a CSV, TSV, TXT, or XLSX file with exact columns: <b>PID</b>, <b>DATE</b>, <b>AGE</b>, <b>VALUE</b>, <b>CAT</b>.<br>
+          Supported decimal separators: dot or comma. Supported delimiters: comma, semicolon, tab, pipe. CSV and XLSX export are supported.
+        </div>
+        <div class="controls-row">
+          <div class="control-group">
+            <label for="csvFile">Data file</label>
+            <input id="csvFile" type="file" accept=".csv,.txt,.tsv,.xlsx" />
+          </div>
+          <div class="control-group">
+            <label for="bandwidth">Bandwidth (years)</label>
+            <input id="bandwidth" type="number" min="0.05" step="0.05" value="0.8" />
+            <button id="autoBandwidthBtn">Auto</button>
+          </div>
+          <div class="control-group">
+            <button id="recomputeBtn" disabled>Recompute</button>
+            <button id="exportObsBtn" disabled>Obs CSV</button>
+            <button id="exportObsXlsxBtn" disabled>Obs XLSX</button>
+            <button id="exportSummaryBtn" disabled>Summary CSV</button>
+            <button id="exportSummaryXlsxBtn" disabled>Summary XLSX</button>
+          </div>
+        </div>
+        <div class="legend-row">
+          <span class="legend-item"><span class="swatch" style="background: var(--tag-green)"></span><label><input type="checkbox" class="cat-filter" value="normal" /> normal</label></span>
+          <span class="legend-item"><span class="swatch" style="background: var(--tag-orange)"></span><label><input type="checkbox" class="cat-filter" value="leak" /> leak</label></span>
+          <span class="legend-item"><span class="swatch" style="background: var(--tag-red)"></span><label><input type="checkbox" class="cat-filter" value="surge" /> surge</label></span>
+          <span class="legend-item"><span class="swatch" style="background: var(--tag-indigo)"></span><label><input type="checkbox" class="cat-filter" value="n/a" /> n/a</label></span>
+          <button id="clearCatFilterBtn" type="button">Deselect filter</button>
+        </div>
+        <div class="footer-note">
+          Sorting: number of observations descending, then average z-score ascending. Animation follows the same ranking.
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Playback and keyboard</h2>
+        <div class="controls-row">
+          <button id="playBtn" disabled>Play</button>
+          <button id="pauseBtn" disabled>Pause</button>
+          <button id="prevBtn" disabled>Previous</button>
+          <button id="nextBtn" disabled>Next</button>
+          <button id="deselectBtn" disabled>Deselect</button>
+        </div>
+        <div class="controls-row">
+          <span class="badge">1 patient / second</span>
+          <span class="badge">Loops at end</span>
+          <span class="badge">W/S or ↑/↓ = previous/next</span>
+          <span class="badge">A/D or ←/→ = previous/next</span>
+          <span class="badge">Space = play/pause</span>
+          <span class="badge">Esc = deselect</span>
+        </div>
+        <div id="statusText" class="small" style="margin-top: 12px;">No data loaded.</div>
+      </section>
+    </div>
+
+    <div class="main">
+      <section class="card">
+        <div class="plots">
+          <div>
+            <h2>Raw values by age</h2>
+            <div id="rawPlot" class="plot-box"></div>
+          </div>
+          <div>
+            <h2>Z-scores by age</h2>
+            <div id="zPlot" class="plot-box"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="right-col">
+        <section class="card">
+          <h2>Selected patient</h2>
+          <div id="summaryPanel" class="summary-grid">
+            <div class="metric"><div class="k">PID</div><div class="v">—</div></div>
+            <div class="metric"><div class="k">Observations</div><div class="v">—</div></div>
+            <div class="metric"><div class="k">Average z-score</div><div class="v">—</div></div>
+            <div class="metric"><div class="k">Age span</div><div class="v">—</div></div>
+            <div class="metric" style="grid-column: 1 / -1;"><div class="k">Instantaneous z-scores</div><div class="v" style="font-size: 13px; font-weight: 500; line-height: 1.5;">—</div></div>
+            <div class="metric" style="grid-column: 1 / -1;"><div class="k">Observed categories</div><div class="v" style="font-size: 13px; font-weight: 500; line-height: 1.5;">—</div></div>
+            <div class="metric" style="grid-column: 1 / -1;"><div class="k">Instantaneous annualised z-score deltas (previous)</div><div class="v" style="font-size: 13px; font-weight: 500; line-height: 1.5;">—</div></div>
+            <div class="metric" style="grid-column: 1 / -1;"><div class="k">Instantaneous annualised z-score deltas (next)</div><div class="v" style="font-size: 13px; font-weight: 500; line-height: 1.5;">—</div></div>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>Dataset summary</h2>
+          <div class="summary-grid">
+            <div class="metric"><div class="k">Patients</div><div id="nPatients" class="v">—</div></div>
+            <div class="metric"><div class="k">Observations</div><div id="nObs" class="v">—</div></div>
+            <div class="metric"><div class="k">Age range</div><div id="ageRange" class="v">—</div></div>
+            <div class="metric"><div class="k">Value range</div><div id="valueRange" class="v">—</div></div>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>Statistical overview</h2>
+          <div id="statsPanel" class="small" style="line-height:1.55; white-space: pre-wrap;">Load data to compute summary statistics.</div>
+        </section>
+
+        <section class="card">
+          <h2>Patients</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>PID</th>
+                  <th>n</th>
+                  <th>Avg z</th>
+                  <th>Age span</th>
+                  <th>Instantaneous z-scores</th>
+                </tr>
+              </thead>
+              <tbody id="patientTableBody"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    const CAT_COLORS = {
+      normal: '#34C759',
+      leak: '#FF9500',
+      surge: '#FF3B30',
+      'n/a': '#5856D6'
+    };
+
+    const state = {
+      rawRows: [],
+      cleanRows: [],
+      grid: [],
+      summaries: [],
+      selectedPid: null,
+      timer: null,
+      playIndex: -1,
+      bandwidth: 0.8,
+      isPlaying: false,
+      muGrid: [],
+      activeCatFilters: new Set()
+    };
+
+    const els = {
+      csvFile: document.getElementById('csvFile'),
+      bandwidth: document.getElementById('bandwidth'),
+      autoBandwidthBtn: document.getElementById('autoBandwidthBtn'),
+      recomputeBtn: document.getElementById('recomputeBtn'),
+      exportObsBtn: document.getElementById('exportObsBtn'),
+      exportObsXlsxBtn: document.getElementById('exportObsXlsxBtn'),
+      exportSummaryBtn: document.getElementById('exportSummaryBtn'),
+      exportSummaryXlsxBtn: document.getElementById('exportSummaryXlsxBtn'),
+      playBtn: document.getElementById('playBtn'),
+      pauseBtn: document.getElementById('pauseBtn'),
+      prevBtn: document.getElementById('prevBtn'),
+      nextBtn: document.getElementById('nextBtn'),
+      deselectBtn: document.getElementById('deselectBtn'),
+      statusText: document.getElementById('statusText'),
+      patientTableBody: document.getElementById('patientTableBody'),
+      summaryPanel: document.getElementById('summaryPanel'),
+      nPatients: document.getElementById('nPatients'),
+      nObs: document.getElementById('nObs'),
+      ageRange: document.getElementById('ageRange'),
+      valueRange: document.getElementById('valueRange'),
+      statsPanel: document.getElementById('statsPanel'),
+      clearCatFilterBtn: document.getElementById('clearCatFilterBtn')
+    };
+
+    function fmt(x, digits = 2) {
+      if (x === null || x === undefined || Number.isNaN(x)) return '—';
+      return Number(x).toFixed(digits);
+    }
+
+    function pFmt(p) {
+      if (p === null || p === undefined || Number.isNaN(p)) return '—';
+      if (p < 0.001) return '<0.001';
+      return Number(p).toFixed(3);
+    }
+
+    function csvEscape(v) {
+      const s = String(v ?? '');
+      if (/[",\n]/.test(s)) return '"' + s.replaceAll('"', '""') + '"';
+      return s;
+    }
+
+    function downloadText(filename, text, mime = 'text/plain;charset=utf-8') {
+      const blob = new Blob([text], { type: mime });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function downloadXlsx(filename, rows, sheetName) {
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, sheetName);
+      XLSX.writeFile(wb, filename);
+    }
+
+    function parseWorkbook(file, onComplete, onError) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const data = new Uint8Array(e.target.result);
+          const wb = XLSX.read(data, { type: 'array' });
+          const ws = wb.Sheets[wb.SheetNames[0]];
+          const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+          onComplete(rows);
+        } catch (err) {
+          onError(err);
+        }
+      };
+      reader.onerror = () => onError(new Error('Failed to read XLSX file.'));
+      reader.readAsArrayBuffer(file);
+    }
+
+    function gaussianKernel(d, h) {
+      const u = d / h;
+      return Math.exp(-0.5 * u * u);
+    }
+
+    function kernelSmooth(xTrain, yTrain, xEval, h) {
+      const out = [];
+      for (const x0 of xEval) {
+        let num = 0;
+        let den = 0;
+        for (let i = 0; i < xTrain.length; i++) {
+          const w = gaussianKernel(xTrain[i] - x0, h);
+          num += w * yTrain[i];
+          den += w;
+        }
+        out.push(den > 0 ? num / den : NaN);
+      }
+      return out;
+    }
+
+    function autoBandwidth(rows) {
+      const ages = rows.map(r => r.AGE).filter(Number.isFinite).sort((a, b) => a - b);
+      if (ages.length < 2) return 0.8;
+      const min = ages[0];
+      const max = ages[ages.length - 1];
+      const range = Math.max(0.5, max - min);
+      return Math.max(0.2, Math.min(2.5, range / 10));
+    }
+
+    function parseFlexibleNumber(v) {
+      if (v === null || v === undefined) return NaN;
+      if (typeof v === 'number') return Number.isFinite(v) ? v : NaN;
+      let s = String(v).trim();
+      if (!s) return NaN;
+      s = s.replace(/\u00A0/g, '').replace(/\s+/g, '');
+      if (s.includes(',') && s.includes('.')) {
+        const lastComma = s.lastIndexOf(',');
+        const lastDot = s.lastIndexOf('.');
+        if (lastComma > lastDot) {
+          s = s.replace(/\./g, '').replace(',', '.');
+        } else {
+          s = s.replace(/,/g, '');
+        }
+      } else if (s.includes(',')) {
+        s = s.replace(',', '.');
+      }
+      return Number(s);
+    }
+
+    function normalizeHeaderName(name) {
+      return String(name ?? '').trim().replace(/^\uFEFF/, '').toUpperCase();
+    }
+
+    function normalizeCat(v) {
+      const s = String(v ?? '').trim().toLowerCase();
+      if (s === 'normal') return 'normal';
+      if (s === 'leak') return 'leak';
+      if (s === 'surge') return 'surge';
+      if (s === 'n/a' || s === 'na' || s === 'n.a.' || s === '') return 'n/a';
+      return 'n/a';
+    }
+
+    function catSeverity(cat) {
+      const c = normalizeCat(cat);
+      if (c === 'normal') return 0;
+      if (c === 'leak') return 1;
+      if (c === 'surge') return 2;
+      return null;
+    }
+
+    function formatCatSeverity(x) {
+      if (x === 0) return 'normal';
+      if (x === 1) return 'leak';
+      if (x === 2) return 'surge';
+      return 'n/a';
+    }
+
+    function catColor(cat) {
+      return CAT_COLORS[normalizeCat(cat)] || CAT_COLORS['n/a'];
+    }
+
+    function validateAndClean(rows) {
+      if (!rows.length) throw new Error('Data file appears empty.');
+      const required = ['PID', 'DATE', 'AGE', 'VALUE', 'CAT'];
+      const sampleKeys = Object.keys(rows[0]).map(normalizeHeaderName);
+      const missing = required.filter(k => !sampleKeys.includes(k));
+      if (missing.length) {
+        throw new Error('Missing required column(s): ' + missing.join(', '));
+      }
+      const cleaned = [];
+      let dropped = 0;
+      for (const r of rows) {
+        const obj = {};
+        for (const [k, v] of Object.entries(r)) obj[normalizeHeaderName(k)] = v;
+        const pid = String(obj.PID ?? '').trim();
+        const date = String(obj.DATE ?? '').trim();
+        const age = parseFlexibleNumber(obj.AGE);
+        const value = parseFlexibleNumber(obj.VALUE);
+        const cat = normalizeCat(obj.CAT);
+        if (!pid || !Number.isFinite(age) || !Number.isFinite(value)) {
+          dropped += 1;
+          continue;
+        }
+        cleaned.push({ PID: pid, DATE: date, AGE: age, VALUE: value, CAT: cat });
+      }
+      if (!cleaned.length) {
+        throw new Error('No valid rows after cleaning. Check delimiter, decimal separator, and headers.');
+      }
+      updateStatus('Valid rows: ' + cleaned.length + '. Dropped rows: ' + dropped + '.');
+      return cleaned;
+    }
+
+    function buildModel(rows, bandwidth) {
+      const ages = rows.map(r => r.AGE);
+      const values = rows.map(r => r.VALUE);
+      const muObs = kernelSmooth(ages, values, ages, bandwidth);
+      const residSq = values.map((v, i) => {
+        const d = v - muObs[i];
+        return d * d;
+      });
+      const varObs = kernelSmooth(ages, residSq, ages, bandwidth);
+      const sigmaObs = varObs.map(v => Math.sqrt(Math.max(v, 1e-8)));
+      const enriched = rows.map((r, i) => ({
+        ...r,
+        MU_AGE: muObs[i],
+        SD_AGE: sigmaObs[i],
+        Z_AGE: sigmaObs[i] > 0 ? (r.VALUE - muObs[i]) / sigmaObs[i] : NaN
+      }));
+      const minAge = Math.min(...ages);
+      const maxAge = Math.max(...ages);
+      const nGrid = 160;
+      const grid = Array.from({ length: nGrid }, (_, i) => minAge + (i * (maxAge - minAge)) / (nGrid - 1));
+      const muGrid = kernelSmooth(ages, values, grid, bandwidth);
+      return { enriched, grid, muGrid };
+    }
+
+    function buildSummaries(enriched) {
+      const map = new Map();
+      for (const r of enriched) {
+        if (!map.has(r.PID)) map.set(r.PID, []);
+        map.get(r.PID).push(r);
+      }
+      const summaries = Array.from(map.entries()).map(([pid, rows]) => {
+        rows.sort((a, b) => a.AGE - b.AGE || a.DATE.localeCompare(b.DATE));
+        for (let i = 0; i < rows.length; i++) {
+          if (i === 0) {
+            rows[i].DT_PREV = null;
+            rows[i].DELTA_PREV_ANNUAL = null;
+          } else {
+            const dt = rows[i].AGE - rows[i - 1].AGE;
+            rows[i].DT_PREV = dt;
+            rows[i].DELTA_PREV_ANNUAL = dt > 0 ? (rows[i].Z_AGE - rows[i - 1].Z_AGE) / dt : null;
+          }
+        }
+        const first = rows[0];
+        const last = rows[rows.length - 1];
+        const totalDt = last.AGE - first.AGE;
+        const overallDeltaAnnual = rows.length >= 2 && totalDt > 0 ? (last.Z_AGE - first.Z_AGE) / totalDt : null;
+        const severities = rows.map(r => catSeverity(r.CAT)).filter(v => v !== null);
+        const maxSeverity = severities.length ? Math.max(...severities) : null;
+        const maxCat = formatCatSeverity(maxSeverity);
+        for (let i = 0; i < rows.length; i++) {
+          rows[i].DELTA_OVERALL_ANNUAL = overallDeltaAnnual;
+          rows[i].PATIENT_MAX_CAT = maxCat;
+          if (i === rows.length - 1) {
+            rows[i].DT_NEXT = null;
+            rows[i].DELTA_NEXT_ANNUAL = null;
+          } else {
+            const dtNext = rows[i + 1].AGE - rows[i].AGE;
+            rows[i].DT_NEXT = dtNext;
+            rows[i].DELTA_NEXT_ANNUAL = dtNext > 0 ? (rows[i + 1].Z_AGE - rows[i].Z_AGE) / dtNext : null;
+          }
+        }
+        const avgZ = rows.reduce((s, r) => s + r.Z_AGE, 0) / rows.length;
+        const ages = rows.map(r => r.AGE);
+        const zString = rows.map(r => `${fmt(r.Z_AGE, 1)}z @ ${fmt(r.AGE, 1)}y`).join(' | ');
+        const catString = rows.map(r => `${r.CAT} @ ${fmt(r.AGE, 1)}y`).join(' | ');
+        const deltaPrevString = rows.map((r, i) => i === 0 || r.DELTA_PREV_ANNUAL === null ? `— @ ${fmt(r.AGE, 1)}y` : `${fmt(r.DELTA_PREV_ANNUAL, 2)} z/y @ ${fmt(r.AGE, 1)}y`).join(' | ');
+        const deltaNextString = rows.map(r => r.DELTA_NEXT_ANNUAL === null ? `— @ ${fmt(r.AGE, 1)}y` : `${fmt(r.DELTA_NEXT_ANNUAL, 2)} z/y @ ${fmt(r.AGE, 1)}y`).join(' | ');
+        return {
+          PID: pid,
+          n: rows.length,
+          avgZ,
+          minAge: Math.min(...ages),
+          maxAge: Math.max(...ages),
+          ageSpan: `${fmt(Math.min(...ages), 1)}–${fmt(Math.max(...ages), 1)}y`,
+          zString,
+          catString,
+          deltaPrevString,
+          deltaNextString,
+          overallDeltaAnnual,
+          maxCat,
+          firstValue: first.VALUE,
+          lastValue: last.VALUE,
+          lastAge: last.AGE,
+          rows
+        };
+      });
+      summaries.sort((a, b) => (b.n - a.n) || (a.avgZ - b.avgZ) || a.PID.localeCompare(b.PID));
+      summaries.forEach((s, i) => {
+        s.rank = i + 1;
+      });
+      return summaries;
+    }
+
+    function updateDatasetSummary(rows) {
+      const ages = rows.map(r => r.AGE);
+      const values = rows.map(r => r.VALUE);
+      const pids = new Set(rows.map(r => r.PID));
+      els.nPatients.textContent = pids.size;
+      els.nObs.textContent = rows.length;
+      els.ageRange.textContent = `${fmt(Math.min(...ages), 1)}–${fmt(Math.max(...ages), 1)}y`;
+      els.valueRange.textContent = `${fmt(Math.min(...values), 2)}–${fmt(Math.max(...values), 2)}`;
+    }
+
+    function getFilteredSummaries() {
+      if (!state.activeCatFilters.size) return state.summaries;
+      return state.summaries.filter(s => s.rows.some(r => state.activeCatFilters.has(normalizeCat(r.CAT))));
+    }
+
+    function refreshFilteredViews() {
+      const filtered = getFilteredSummaries();
+      if (state.selectedPid && !filtered.some(s => s.PID === state.selectedPid)) {
+        state.selectedPid = null;
+      }
+      renderTable();
+      updateSummaryPanel();
+      renderPlots();
+      const active = Array.from(state.activeCatFilters);
+      if (active.length) {
+        updateStatus(`Filter active: ${active.join(', ')}. Showing ${filtered.length} patients.`);
+      } else if (state.cleanRows.length) {
+        updateStatus(`Static overview mode. ${state.cleanRows.length} observations across ${state.summaries.length} patients.`);
+      }
+    }
+
+    function mean(arr) {
+      return arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
+    }
+
+    function variance(arr) {
+      if (arr.length < 2) return null;
+      const m = mean(arr);
+      return arr.reduce((s, x) => s + (x - m) ** 2, 0) / (arr.length - 1);
+    }
+
+    function stdDev(arr) {
+      const v = variance(arr);
+      return v === null ? null : Math.sqrt(v);
+    }
+
+    function quantile(arr, q) {
+      if (!arr.length) return null;
+      const sorted = [...arr].sort((a, b) => a - b);
+      const pos = (sorted.length - 1) * q;
+      const base = Math.floor(pos);
+      const rest = pos - base;
+      if (sorted[base + 1] !== undefined) return sorted[base] + rest * (sorted[base + 1] - sorted[base]);
+      return sorted[base];
+    }
+
+    function pearson(x, y) {
+      if (x.length !== y.length || x.length < 3) return null;
+      const mx = mean(x);
+      const my = mean(y);
+      let num = 0;
+      let sx = 0;
+      let sy = 0;
+      for (let i = 0; i < x.length; i++) {
+        const dx = x[i] - mx;
+        const dy = y[i] - my;
+        num += dx * dy;
+        sx += dx * dx;
+        sy += dy * dy;
+      }
+      if (sx <= 0 || sy <= 0) return null;
+      return num / Math.sqrt(sx * sy);
+    }
+
+    function linearRegression(x, y) {
+      if (x.length !== y.length || x.length < 3) return null;
+      const mx = mean(x);
+      const my = mean(y);
+      let sxx = 0;
+      let sxy = 0;
+      for (let i = 0; i < x.length; i++) {
+        sxx += (x[i] - mx) ** 2;
+        sxy += (x[i] - mx) * (y[i] - my);
+      }
+      if (sxx <= 0) return null;
+      const slope = sxy / sxx;
+      const intercept = my - slope * mx;
+      const yhat = x.map(v => intercept + slope * v);
+      const ssRes = y.reduce((s, yi, i) => s + (yi - yhat[i]) ** 2, 0);
+      const ssTot = y.reduce((s, yi) => s + (yi - my) ** 2, 0);
+      const r2 = ssTot > 0 ? 1 - ssRes / ssTot : null;
+      return { slope, intercept, r2 };
+    }
+
+    function sampleWithReplacement(arr) {
+      const out = [];
+      for (let i = 0; i < arr.length; i++) {
+        out.push(arr[Math.floor(Math.random() * arr.length)]);
+      }
+      return out;
+    }
+
+    function buildClusterMap(items, clusterKey) {
+      const map = new Map();
+      for (const item of items) {
+        const key = item[clusterKey];
+        if (!map.has(key)) map.set(key, []);
+        map.get(key).push(item);
+      }
+      return map;
+    }
+
+    function clusterBootstrapRegression(items, xKey, yKey, clusterKey, nBoot = 800) {
+      const usable = items.filter(d => Number.isFinite(d[xKey]) && Number.isFinite(d[yKey]) && d[clusterKey] !== null && d[clusterKey] !== undefined);
+      if (usable.length < 3) return null;
+      const base = linearRegression(usable.map(d => d[xKey]), usable.map(d => d[yKey]));
+      if (!base) return null;
+      const clusterMap = buildClusterMap(usable, clusterKey);
+      const clusterIds = Array.from(clusterMap.keys());
+      if (clusterIds.length < 3) return { ...base, p: null, ciLow: null, ciHigh: null, nClusters: clusterIds.length, nObs: usable.length };
+      const boot = [];
+      for (let b = 0; b < nBoot; b++) {
+        const sampledIds = sampleWithReplacement(clusterIds);
+        const rows = sampledIds.flatMap(id => clusterMap.get(id));
+        const fit = linearRegression(rows.map(d => d[xKey]), rows.map(d => d[yKey]));
+        if (fit && Number.isFinite(fit.slope)) boot.push(fit.slope);
+      }
+      if (!boot.length) return { ...base, p: null, ciLow: null, ciHigh: null, nClusters: clusterIds.length, nObs: usable.length };
+      const ciLow = quantile(boot, 0.025);
+      const ciHigh = quantile(boot, 0.975);
+      const oppFrac = Math.min(
+        boot.filter(v => v >= 0).length / boot.length,
+        boot.filter(v => v <= 0).length / boot.length
+      );
+      const p = Math.min(1, 2 * oppFrac);
+      return { ...base, p, ciLow, ciHigh, nClusters: clusterIds.length, nObs: usable.length };
+    }
+
+    function clusterPermutationGroupDiff(items, valueKey, groupKey, clusterKey, orderedLevels = null, nPerm = 800) {
+      const usable = items.filter(d => Number.isFinite(d[valueKey]) && d[groupKey] !== null && d[groupKey] !== undefined && d[groupKey] !== '' && d[clusterKey] !== null && d[clusterKey] !== undefined);
+      if (!usable.length) return null;
+      const clusterMap = buildClusterMap(usable, clusterKey);
+      const clusterIds = Array.from(clusterMap.keys());
+      const groups = orderedLevels || Array.from(new Set(usable.map(d => d[groupKey])));
+      const summaries = groups.map(g => {
+        const vals = usable.filter(d => d[groupKey] === g).map(d => d[valueKey]);
+        return { group: g, n: vals.length, mean: mean(vals), sd: stdDev(vals) };
+      }).filter(g => g.n > 0);
+      if (summaries.length < 2 || clusterIds.length < 3) {
+        return { summaries, p: null, stat: null, nClusters: clusterIds.length, nObs: usable.length };
+      }
+      const observedOverall = mean(usable.map(d => d[valueKey]));
+      const observed = summaries.reduce((acc, g) => acc + g.n * ((g.mean ?? 0) - observedOverall) ** 2, 0);
+      const clusterLabels = clusterIds.map(id => {
+        const rows = clusterMap.get(id);
+        const firstValid = rows.find(r => r[groupKey] !== null && r[groupKey] !== undefined && r[groupKey] !== '');
+        return firstValid ? firstValid[groupKey] : null;
+      });
+      const validLabelIdx = clusterLabels.map((v, i) => v !== null ? i : -1).filter(i => i >= 0);
+      const permStats = [];
+      for (let b = 0; b < nPerm; b++) {
+        const shuffled = [...validLabelIdx.map(i => clusterLabels[i])];
+        for (let i = shuffled.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        }
+        const labelMap = new Map();
+        let ptr = 0;
+        for (let i = 0; i < clusterIds.length; i++) {
+          if (validLabelIdx.includes(i)) {
+            labelMap.set(clusterIds[i], shuffled[ptr]);
+            ptr += 1;
+          }
+        }
+        const permRows = usable.map(row => ({ ...row, __perm_group: labelMap.get(row[clusterKey]) ?? null }));
+        const permGroups = groups.map(g => {
+          const vals = permRows.filter(d => d.__perm_group === g).map(d => d[valueKey]);
+          return { group: g, n: vals.length, mean: mean(vals) };
+        }).filter(g => g.n > 0);
+        if (permGroups.length < 2) continue;
+        const permOverall = mean(permRows.map(d => d[valueKey]));
+        const stat = permGroups.reduce((acc, g) => acc + g.n * ((g.mean ?? 0) - permOverall) ** 2, 0);
+        if (Number.isFinite(stat)) permStats.push(stat);
+      }
+      const p = permStats.length ? permStats.filter(v => v >= observed).length / permStats.length : null;
+      return { summaries, p, stat: observed, nClusters: clusterIds.length, nObs: usable.length };
+    }
+
+    function computeStatsReport() {
+      if (!state.summaries.length) {
+        els.statsPanel.textContent = 'Load data to compute summary statistics.';
+        return;
+      }
+
+      const patientLevel = state.summaries.map(s => ({
+        PID: s.PID,
+        n: s.n,
+        avgZ: s.avgZ,
+        lastValue: s.lastValue,
+        lastAge: s.lastAge,
+        maxCatSeverity: catSeverity(s.maxCat),
+        overallDeltaAnnual: s.overallDeltaAnnual
+      }));
+
+      const regLastAge = clusterBootstrapRegression(patientLevel, 'lastAge', 'lastValue', 'PID');
+      const regMaxCat = clusterBootstrapRegression(patientLevel.filter(d => d.maxCatSeverity !== null), 'maxCatSeverity', 'lastValue', 'PID');
+      const groupsLastByCat = clusterPermutationGroupDiff(patientLevel.filter(d => d.maxCatSeverity !== null), 'lastValue', 'maxCatSeverity', 'PID', [0, 1, 2]);
+      const regLastN = clusterBootstrapRegression(patientLevel, 'n', 'lastValue', 'PID');
+      const regLastAvgZ = clusterBootstrapRegression(patientLevel, 'avgZ', 'lastValue', 'PID');
+      const regOverallDeltaAge = clusterBootstrapRegression(patientLevel.filter(d => d.overallDeltaAnnual !== null), 'lastAge', 'overallDeltaAnnual', 'PID');
+
+      const deltaRows = state.summaries.flatMap(s => s.rows.map((r, i) => ({
+        PID: s.PID,
+        AGE: r.AGE,
+        DELTA_PREV_ANNUAL: r.DELTA_PREV_ANNUAL,
+        DELTA_NEXT_ANNUAL: r.DELTA_NEXT_ANNUAL,
+        CAT_T1: r.CAT,
+        CAT_T0: i > 0 ? s.rows[i - 1].CAT : null,
+        MAX_CAT: s.maxCat,
+        DT_PREV: r.DT_PREV,
+        VALUE_T1: r.VALUE,
+        TRANSITION: i > 0 ? `${normalizeCat(s.rows[i - 1].CAT)}→${normalizeCat(r.CAT)}` : null
+      })));
+
+      const prevDeltaRows = deltaRows.filter(r => r.DELTA_PREV_ANNUAL !== null && Number.isFinite(r.DELTA_PREV_ANNUAL));
+      const nextDeltaRows = deltaRows.filter(r => r.DELTA_NEXT_ANNUAL !== null && Number.isFinite(r.DELTA_NEXT_ANNUAL));
+
+      const regDeltaAge = clusterBootstrapRegression(prevDeltaRows, 'AGE', 'DELTA_PREV_ANNUAL', 'PID');
+      const regDeltaDt = clusterBootstrapRegression(prevDeltaRows, 'DT_PREV', 'DELTA_PREV_ANNUAL', 'PID');
+      const regDeltaValue = clusterBootstrapRegression(prevDeltaRows, 'VALUE_T1', 'DELTA_PREV_ANNUAL', 'PID');
+      const groupsDeltaT0 = clusterPermutationGroupDiff(prevDeltaRows.map(d => ({ ...d, CAT_T0_SEV: catSeverity(d.CAT_T0) })), 'DELTA_PREV_ANNUAL', 'CAT_T0_SEV', 'PID', [0, 1, 2]);
+      const groupsDeltaT1 = clusterPermutationGroupDiff(prevDeltaRows.map(d => ({ ...d, CAT_T1_SEV: catSeverity(d.CAT_T1) })), 'DELTA_PREV_ANNUAL', 'CAT_T1_SEV', 'PID', [0, 1, 2]);
+      const groupsDeltaMax = clusterPermutationGroupDiff(prevDeltaRows.map(d => ({ ...d, MAX_CAT_SEV: catSeverity(d.MAX_CAT) })), 'DELTA_PREV_ANNUAL', 'MAX_CAT_SEV', 'PID', [0, 1, 2]);
+      const regNextAge = clusterBootstrapRegression(nextDeltaRows, 'AGE', 'DELTA_NEXT_ANNUAL', 'PID');
+
+      const transitionOrder = [
+        'normal→normal', 'normal→leak', 'normal→surge',
+        'leak→normal', 'leak→leak', 'leak→surge',
+        'surge→normal', 'surge→leak', 'surge→surge'
+      ];
+      const transitionGroups = clusterPermutationGroupDiff(prevDeltaRows, 'DELTA_PREV_ANNUAL', 'TRANSITION', 'PID', transitionOrder);
+      const commonTransitions = transitionGroups && transitionGroups.summaries ? transitionGroups.summaries.filter(g => g.n >= 3).sort((a, b) => b.n - a.n || String(a.group).localeCompare(String(b.group))) : [];
+
+      const lines = [];
+      lines.push('Patient-level outcome: value at last observation');
+      lines.push(`• By last age: n=${regLastAge ? regLastAge.nObs : patientLevel.length}; patients=${regLastAge ? regLastAge.nClusters : patientLevel.length}; slope=${regLastAge ? fmt(regLastAge.slope, 3) : '—'} value/year; 95% CI=${regLastAge ? `[${fmt(regLastAge.ciLow, 3)}, ${fmt(regLastAge.ciHigh, 3)}]` : '—'}; R²=${regLastAge && regLastAge.r2 !== null ? fmt(regLastAge.r2, 3) : '—'}; bootstrap p=${regLastAge ? pFmt(regLastAge.p) : '—'}`);
+      lines.push(`• By most severe reported CAT (ordinal normal<leak<surge): n=${regMaxCat ? regMaxCat.nObs : patientLevel.length}; patients=${regMaxCat ? regMaxCat.nClusters : patientLevel.length}; slope=${regMaxCat ? fmt(regMaxCat.slope, 3) : '—'} value/category step; 95% CI=${regMaxCat ? `[${fmt(regMaxCat.ciLow, 3)}, ${fmt(regMaxCat.ciHigh, 3)}]` : '—'}; R²=${regMaxCat && regMaxCat.r2 !== null ? fmt(regMaxCat.r2, 3) : '—'}; bootstrap p=${regMaxCat ? pFmt(regMaxCat.p) : '—'}`);
+      if (groupsLastByCat && groupsLastByCat.summaries.length) lines.push('• Last value by most severe CAT: ' + groupsLastByCat.summaries.map(g => `${formatCatSeverity(g.group)} n=${g.n}, mean=${fmt(g.mean, 2)}, sd=${fmt(g.sd, 2)}`).join(' | '));
+      lines.push(`• Group-difference check for last value by most severe CAT: statistic=${groupsLastByCat && groupsLastByCat.stat !== null ? fmt(groupsLastByCat.stat, 3) : '—'}; cluster-permutation p=${groupsLastByCat ? pFmt(groupsLastByCat.p) : '—'}`);
+      lines.push(`• Additional checks: by observation count slope=${regLastN ? fmt(regLastN.slope, 3) : '—'}, 95% CI=${regLastN ? `[${fmt(regLastN.ciLow, 3)}, ${fmt(regLastN.ciHigh, 3)}]` : '—'}, p=${regLastN ? pFmt(regLastN.p) : '—'}; by average z-score slope=${regLastAvgZ ? fmt(regLastAvgZ.slope, 3) : '—'}, 95% CI=${regLastAvgZ ? `[${fmt(regLastAvgZ.ciLow, 3)}, ${fmt(regLastAvgZ.ciHigh, 3)}]` : '—'}, p=${regLastAvgZ ? pFmt(regLastAvgZ.p) : '—'}`);
+      lines.push(`• Overall annualised z-score delta by last age: slope=${regOverallDeltaAge ? fmt(regOverallDeltaAge.slope, 3) : '—'} z/y per year age; 95% CI=${regOverallDeltaAge ? `[${fmt(regOverallDeltaAge.ciLow, 3)}, ${fmt(regOverallDeltaAge.ciHigh, 3)}]` : '—'}; R²=${regOverallDeltaAge && regOverallDeltaAge.r2 !== null ? fmt(regOverallDeltaAge.r2, 3) : '—'}; bootstrap p=${regOverallDeltaAge ? pFmt(regOverallDeltaAge.p) : '—'}`);
+      lines.push('');
+      lines.push('Observation-level outcome: instantaneous annualised z-score delta from previous observation');
+      lines.push(`• By age at current observation: n=${regDeltaAge ? regDeltaAge.nObs : prevDeltaRows.length}; patients=${regDeltaAge ? regDeltaAge.nClusters : new Set(prevDeltaRows.map(d => d.PID)).size}; slope=${regDeltaAge ? fmt(regDeltaAge.slope, 3) : '—'} z/y²; 95% CI=${regDeltaAge ? `[${fmt(regDeltaAge.ciLow, 3)}, ${fmt(regDeltaAge.ciHigh, 3)}]` : '—'}; R²=${regDeltaAge && regDeltaAge.r2 !== null ? fmt(regDeltaAge.r2, 3) : '—'}; bootstrap p=${regDeltaAge ? pFmt(regDeltaAge.p) : '—'}`);
+      lines.push(`• By interval length dt: slope=${regDeltaDt ? fmt(regDeltaDt.slope, 3) : '—'} z/y per year interval; 95% CI=${regDeltaDt ? `[${fmt(regDeltaDt.ciLow, 3)}, ${fmt(regDeltaDt.ciHigh, 3)}]` : '—'}; R²=${regDeltaDt && regDeltaDt.r2 !== null ? fmt(regDeltaDt.r2, 3) : '—'}; bootstrap p=${regDeltaDt ? pFmt(regDeltaDt.p) : '—'}`);
+      if (groupsDeltaT0 && groupsDeltaT0.summaries.length) lines.push('• Delta by t0 CAT: ' + groupsDeltaT0.summaries.map(g => `${formatCatSeverity(g.group)} n=${g.n}, mean=${fmt(g.mean, 2)}, sd=${fmt(g.sd, 2)}`).join(' | '));
+      lines.push(`• Group-difference check for delta by t0 CAT: statistic=${groupsDeltaT0 && groupsDeltaT0.stat !== null ? fmt(groupsDeltaT0.stat, 3) : '—'}; cluster-permutation p=${groupsDeltaT0 ? pFmt(groupsDeltaT0.p) : '—'}`);
+      if (groupsDeltaT1 && groupsDeltaT1.summaries.length) lines.push('• Delta by t1 CAT: ' + groupsDeltaT1.summaries.map(g => `${formatCatSeverity(g.group)} n=${g.n}, mean=${fmt(g.mean, 2)}, sd=${fmt(g.sd, 2)}`).join(' | '));
+      lines.push(`• Group-difference check for delta by t1 CAT: statistic=${groupsDeltaT1 && groupsDeltaT1.stat !== null ? fmt(groupsDeltaT1.stat, 3) : '—'}; cluster-permutation p=${groupsDeltaT1 ? pFmt(groupsDeltaT1.p) : '—'}`);
+      if (groupsDeltaMax && groupsDeltaMax.summaries.length) lines.push('• Delta by patient max CAT: ' + groupsDeltaMax.summaries.map(g => `${formatCatSeverity(g.group)} n=${g.n}, mean=${fmt(g.mean, 2)}, sd=${fmt(g.sd, 2)}`).join(' | '));
+      lines.push(`• Group-difference check for delta by patient max CAT: statistic=${groupsDeltaMax && groupsDeltaMax.stat !== null ? fmt(groupsDeltaMax.stat, 3) : '—'}; cluster-permutation p=${groupsDeltaMax ? pFmt(groupsDeltaMax.p) : '—'}`);
+      if (commonTransitions.length) lines.push('• Delta by CAT transition (t0→t1): ' + commonTransitions.map(g => `${g.group} n=${g.n}, mean=${fmt(g.mean, 2)}, sd=${fmt(g.sd, 2)}`).join(' | '));
+      lines.push(`• Group-difference check for delta by CAT transition: statistic=${transitionGroups && transitionGroups.stat !== null ? fmt(transitionGroups.stat, 3) : '—'}; cluster-permutation p=${transitionGroups ? pFmt(transitionGroups.p) : '—'}`);
+      lines.push(`• Additional check: delta by current value slope=${regDeltaValue ? fmt(regDeltaValue.slope, 3) : '—'}, 95% CI=${regDeltaValue ? `[${fmt(regDeltaValue.ciLow, 3)}, ${fmt(regDeltaValue.ciHigh, 3)}]` : '—'}, R²=${regDeltaValue && regDeltaValue.r2 !== null ? fmt(regDeltaValue.r2, 3) : '—'}; bootstrap p=${regDeltaValue ? pFmt(regDeltaValue.p) : '—'}`);
+      lines.push('');
+      lines.push('Observation-level outcome: instantaneous annualised z-score delta to next observation');
+      lines.push(`• By age at current observation: n=${regNextAge ? regNextAge.nObs : nextDeltaRows.length}; patients=${regNextAge ? regNextAge.nClusters : new Set(nextDeltaRows.map(d => d.PID)).size}; slope=${regNextAge ? fmt(regNextAge.slope, 3) : '—'} z/y²; 95% CI=${regNextAge ? `[${fmt(regNextAge.ciLow, 3)}, ${fmt(regNextAge.ciHigh, 3)}]` : '—'}; R²=${regNextAge && regNextAge.r2 !== null ? fmt(regNextAge.r2, 3) : '—'}; bootstrap p=${regNextAge ? pFmt(regNextAge.p) : '—'}`);
+      lines.push('');
+      lines.push('Notes');
+      lines.push('• t0 is the earlier observation in an interval, t1 is the later observation in the same interval.');
+      lines.push('• Continuous-predictor inference here is patient-cluster bootstrap based, so whole patients are resampled rather than single observations.');
+      lines.push('• Group-comparison p-values use patient-cluster permutation, which is more appropriate for repeated measures than naive independence-based p-values, but the whole section remains exploratory and does not replace a full mixed-effects analysis.');
+      lines.push('• CAT is treated as an ordinal severity ladder: normal < leak < surge; n/a is excluded from ordinal regressions.');
+      lines.push('• First observations and single-observation patients have no previous instantaneous annualised z-score delta. Last observations have no next instantaneous annualised z-score delta.');
+      lines.push('• All delta metrics are based on z-scores, not raw values.');
+      els.statsPanel.textContent = lines.join('\n');
+    }
+
+    function renderTable() {
+      els.patientTableBody.innerHTML = '';
+      const visibleSummaries = getFilteredSummaries();
+      for (const s of visibleSummaries) {
+        const tr = document.createElement('tr');
+        if (s.PID === state.selectedPid) tr.classList.add('selected');
+        tr.innerHTML = `
+          <td>${s.rank}</td>
+          <td><b>${s.PID}</b></td>
+          <td>${s.n}</td>
+          <td class="${s.avgZ < 0 ? 'danger' : 'good'}">${fmt(s.avgZ, 2)}</td>
+          <td>${s.ageSpan}</td>
+          <td class="small">${s.zString}</td>
+        `;
+        tr.addEventListener('click', () => selectPatient(s.PID));
+        els.patientTableBody.appendChild(tr);
+      }
+    }
+
+    function updateSummaryPanel() {
+      const boxes = els.summaryPanel.querySelectorAll('.metric .v');
+      if (!state.selectedPid) {
+        for (const box of boxes) box.textContent = '—';
+        return;
+      }
+      const s = state.summaries.find(x => x.PID === state.selectedPid);
+      if (!s) return;
+      boxes[0].textContent = s.PID;
+      boxes[1].textContent = s.n;
+      boxes[2].textContent = fmt(s.avgZ, 2);
+      boxes[3].textContent = s.ageSpan;
+      boxes[4].textContent = s.zString;
+      boxes[5].textContent = s.catString;
+      boxes[6].textContent = s.deltaPrevString;
+      boxes[7].textContent = s.deltaNextString;
+    }
+
+    function makeBaseLayout(yTitle) {
+      return {
+        margin: { l: 60, r: 10, t: 10, b: 50 },
+        paper_bgcolor: 'white',
+        plot_bgcolor: 'white',
+        xaxis: { title: 'Age (years)', zeroline: false, gridcolor: '#edf2f7' },
+        yaxis: { title: yTitle, zeroline: false, gridcolor: '#edf2f7' },
+        showlegend: false
+      };
+    }
+
+    function buildSelectedHalfSegments(rows, yKey) {
+      const traces = [];
+      for (let i = 0; i < rows.length - 1; i++) {
+        const a = rows[i];
+        const b = rows[i + 1];
+        const midX = (a.AGE + b.AGE) / 2;
+        const midY = (a[yKey] + b[yKey]) / 2;
+        traces.push({
+          x: [a.AGE, midX],
+          y: [a[yKey], midY],
+          mode: 'lines',
+          type: 'scatter',
+          line: { width: 4, color: catColor(a.CAT) },
+          hoverinfo: 'skip'
+        });
+        traces.push({
+          x: [midX, b.AGE],
+          y: [midY, b[yKey]],
+          mode: 'lines',
+          type: 'scatter',
+          line: { width: 4, color: catColor(b.CAT) },
+          hoverinfo: 'skip'
+        });
+      }
+      return traces;
+    }
+
+    function renderPlots() {
+      if (!state.cleanRows.length) return;
+      const all = state.cleanRows;
+      const selected = state.selectedPid ? state.summaries.find(s => s.PID === state.selectedPid) : null;
+      const g = state.grid;
+      const rawTraces = [
+        {
+          x: all.map(r => r.AGE),
+          y: all.map(r => r.VALUE),
+          mode: 'markers',
+          type: 'scattergl',
+          marker: {
+            size: 8,
+            color: all.map(r => catColor(r.CAT)),
+            opacity: selected ? 0.18 : 0.55,
+            line: { width: 0 }
+          },
+          hovertemplate: 'PID=%{text}<br>Age=%{x:.2f}y<br>Value=%{y:.3f}<br>CAT=%{customdata}<extra></extra>',
+          text: all.map(r => r.PID),
+          customdata: all.map(r => r.CAT)
+        },
+        {
+          x: g,
+          y: state.muGrid,
+          mode: 'lines',
+          type: 'scatter',
+          line: { width: 2, color: '#1f2937' },
+          hovertemplate: 'Age=%{x:.2f}y<br>Expected=%{y:.3f}<extra></extra>'
+        }
+      ];
+      const zTraces = [
+        {
+          x: all.map(r => r.AGE),
+          y: all.map(r => r.Z_AGE),
+          mode: 'markers',
+          type: 'scattergl',
+          marker: {
+            size: 8,
+            color: all.map(r => catColor(r.CAT)),
+            opacity: selected ? 0.18 : 0.55,
+            line: { width: 0 }
+          },
+          hovertemplate: 'PID=%{text}<br>Age=%{x:.2f}y<br>Z=%{y:.3f}<br>CAT=%{customdata}<extra></extra>',
+          text: all.map(r => r.PID),
+          customdata: all.map(r => r.CAT)
+        },
+        {
+          x: [Math.min(...all.map(r => r.AGE)), Math.max(...all.map(r => r.AGE))],
+          y: [0, 0],
+          mode: 'lines',
+          type: 'scatter',
+          line: { width: 1, dash: 'dash', color: '#1f2937' },
+          hoverinfo: 'skip'
+        }
+      ];
+      if (selected) {
+        rawTraces.push(...buildSelectedHalfSegments(selected.rows, 'VALUE'));
+        rawTraces.push({
+          x: selected.rows.map(r => r.AGE),
+          y: selected.rows.map(r => r.VALUE),
+          mode: 'markers',
+          type: 'scatter',
+          marker: {
+            size: 11,
+            color: selected.rows.map(r => catColor(r.CAT)),
+            line: { width: 1, color: '#ffffff' }
+          },
+          hovertemplate: 'PID=' + selected.PID + '<br>Age=%{x:.2f}y<br>Value=%{y:.3f}<br>CAT=%{customdata}<extra></extra>',
+          customdata: selected.rows.map(r => r.CAT)
+        });
+        zTraces.push(...buildSelectedHalfSegments(selected.rows, 'Z_AGE'));
+        zTraces.push({
+          x: selected.rows.map(r => r.AGE),
+          y: selected.rows.map(r => r.Z_AGE),
+          mode: 'markers',
+          type: 'scatter',
+          marker: {
+            size: 11,
+            color: selected.rows.map(r => catColor(r.CAT)),
+            line: { width: 1, color: '#ffffff' }
+          },
+          hovertemplate: 'PID=' + selected.PID + '<br>Age=%{x:.2f}y<br>Z=%{y:.3f}<br>CAT=%{customdata}<extra></extra>',
+          customdata: selected.rows.map(r => r.CAT)
+        });
+      }
+      Plotly.react('rawPlot', rawTraces, makeBaseLayout('Value'), { responsive: true, displayModeBar: true });
+      Plotly.react('zPlot', zTraces, makeBaseLayout('Z-score'), { responsive: true, displayModeBar: true });
+    }
+
+    function updateStatus(msg) {
+      els.statusText.textContent = msg;
+    }
+
+    function setButtonsEnabled(enabled) {
+      const buttonList = [
+        els.recomputeBtn,
+        els.exportObsBtn,
+        els.exportObsXlsxBtn,
+        els.exportSummaryBtn,
+        els.exportSummaryXlsxBtn,
+        els.playBtn,
+        els.pauseBtn,
+        els.prevBtn,
+        els.nextBtn,
+        els.deselectBtn
+      ];
+      for (const el of buttonList) el.disabled = !enabled;
+    }
+
+    function stopPlayback() {
+      if (state.timer) clearInterval(state.timer);
+      state.timer = null;
+      state.isPlaying = false;
+    }
+
+    function selectPatient(pid) {
+      state.selectedPid = pid;
+      state.playIndex = state.summaries.findIndex(s => s.PID === pid);
+      renderTable();
+      updateSummaryPanel();
+      renderPlots();
+      const s = state.summaries[state.playIndex];
+      if (s) updateStatus(`Selected PID ${s.PID} (${s.n} observations, avg z ${fmt(s.avgZ, 2)}).`);
+    }
+
+    function deselectPatient() {
+      state.selectedPid = null;
+      renderTable();
+      updateSummaryPanel();
+      renderPlots();
+      updateStatus(`Static overview mode. ${state.cleanRows.length} observations across ${state.summaries.length} patients.`);
+    }
+
+    function nextPatient(step = 1) {
+      const visibleSummaries = getFilteredSummaries();
+      if (!visibleSummaries.length) return;
+      const currentIdx = state.selectedPid ? visibleSummaries.findIndex(s => s.PID === state.selectedPid) : -1;
+      let nextIdx;
+      if (currentIdx < 0) nextIdx = 0;
+      else nextIdx = (currentIdx + step + visibleSummaries.length) % visibleSummaries.length;
+      state.playIndex = state.summaries.findIndex(s => s.PID === visibleSummaries[nextIdx].PID);
+      selectPatient(visibleSummaries[nextIdx].PID);
+    }
+
+    function play() {
+      stopPlayback();
+      const visibleSummaries = getFilteredSummaries();
+      if (!visibleSummaries.length) return;
+      if (!state.selectedPid || !visibleSummaries.some(s => s.PID === state.selectedPid)) {
+        state.playIndex = state.summaries.findIndex(s => s.PID === visibleSummaries[0].PID);
+        selectPatient(visibleSummaries[0].PID);
+      }
+      state.timer = setInterval(() => nextPatient(1), 1000);
+      state.isPlaying = true;
+      updateStatus('Playback running.');
+    }
+
+    function togglePlayback() {
+      if (!state.summaries.length) return;
+      if (state.isPlaying) {
+        stopPlayback();
+        updateStatus('Playback paused.');
+      } else {
+        play();
+      }
+    }
+
+    function buildEverything() {
+      state.bandwidth = Number(els.bandwidth.value);
+      if (!Number.isFinite(state.bandwidth) || state.bandwidth <= 0) {
+        throw new Error('Bandwidth must be a positive number.');
+      }
+      const { enriched, grid, muGrid } = buildModel(state.rawRows, state.bandwidth);
+      state.cleanRows = enriched;
+      state.grid = grid;
+      state.muGrid = muGrid;
+      state.summaries = buildSummaries(enriched);
+      state.playIndex = -1;
+      updateDatasetSummary(enriched);
+      computeStatsReport();
+      renderTable();
+      deselectPatient();
+      setButtonsEnabled(true);
+      updateStatus(`Loaded ${enriched.length} observations from ${state.summaries.length} patients. Bandwidth = ${fmt(state.bandwidth, 2)} years.`);
+      refreshFilteredViews();
+    }
+
+    els.csvFile.addEventListener('change', e => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const handleRows = rows => {
+        try {
+          stopPlayback();
+          const cleaned = validateAndClean(rows);
+          state.rawRows = cleaned;
+          els.bandwidth.value = fmt(autoBandwidth(cleaned), 2);
+          buildEverything();
+        } catch (err) {
+          setButtonsEnabled(false);
+          updateStatus('Error: ' + err.message);
+          alert(err.message);
+        }
+      };
+      const handleError = err => {
+        setButtonsEnabled(false);
+        updateStatus('Parse error.');
+        alert(err.message);
+      };
+      if (file.name.toLowerCase().endsWith('.xlsx')) {
+        parseWorkbook(file, handleRows, handleError);
+      } else {
+        Papa.parse(file, {
+          header: true,
+          skipEmptyLines: true,
+          delimitersToGuess: [',', ';', '\t', '|'],
+          complete: res => handleRows(res.data),
+          error: handleError
+        });
+      }
+    });
+
+    els.autoBandwidthBtn.addEventListener('click', () => {
+      if (!state.rawRows.length) return;
+      els.bandwidth.value = fmt(autoBandwidth(state.rawRows), 2);
+    });
+
+    els.recomputeBtn.addEventListener('click', () => {
+      try {
+        stopPlayback();
+        buildEverything();
+      } catch (err) {
+        updateStatus('Error: ' + err.message);
+        alert(err.message);
+      }
+    });
+
+    els.playBtn.addEventListener('click', play);
+    els.pauseBtn.addEventListener('click', () => {
+      stopPlayback();
+      updateStatus('Playback paused.');
+    });
+    els.nextBtn.addEventListener('click', () => {
+      stopPlayback();
+      nextPatient(1);
+    });
+    els.prevBtn.addEventListener('click', () => {
+      stopPlayback();
+      nextPatient(-1);
+    });
+    els.deselectBtn.addEventListener('click', () => {
+      stopPlayback();
+      deselectPatient();
+    });
+
+    document.querySelectorAll('.cat-filter').forEach(el => {
+      el.addEventListener('change', () => {
+        if (el.checked) state.activeCatFilters.add(normalizeCat(el.value));
+        else state.activeCatFilters.delete(normalizeCat(el.value));
+        stopPlayback();
+        refreshFilteredViews();
+      });
+    });
+
+    els.clearCatFilterBtn.addEventListener('click', () => {
+      state.activeCatFilters.clear();
+      document.querySelectorAll('.cat-filter').forEach(el => {
+        el.checked = false;
+      });
+      stopPlayback();
+      refreshFilteredViews();
+    });
+
+    document.addEventListener('keydown', e => {
+      if (!state.summaries.length) return;
+      const tag = (document.activeElement?.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || document.activeElement?.isContentEditable) return;
+      const key = e.key.toLowerCase();
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || key === 'd' || key === 's') {
+        e.preventDefault();
+        stopPlayback();
+        nextPatient(1);
+      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp' || key === 'a' || key === 'w') {
+        e.preventDefault();
+        stopPlayback();
+        nextPatient(-1);
+      } else if (e.key === ' ') {
+        e.preventDefault();
+        togglePlayback();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        stopPlayback();
+        deselectPatient();
+      }
+    });
+
+    els.exportObsBtn.addEventListener('click', () => {
+      const cols = ['PID', 'DATE', 'AGE', 'VALUE', 'CAT', 'MU_AGE', 'SD_AGE', 'Z_AGE', 'DT_PREV', 'DELTA_PREV_ANNUAL', 'DT_NEXT', 'DELTA_NEXT_ANNUAL', 'DELTA_OVERALL_ANNUAL', 'PATIENT_MAX_CAT'];
+      const lines = [cols.join(',')];
+      for (const r of state.cleanRows) {
+        lines.push(cols.map(c => csvEscape(r[c])).join(','));
+      }
+      downloadText('enriched_observations.csv', lines.join('\n'), 'text/csv;charset=utf-8');
+    });
+
+    els.exportObsXlsxBtn.addEventListener('click', () => {
+      downloadXlsx('enriched_observations.xlsx', state.cleanRows.map(r => ({
+        PID: r.PID,
+        DATE: r.DATE,
+        AGE: r.AGE,
+        VALUE: r.VALUE,
+        CAT: r.CAT,
+        MU_AGE: r.MU_AGE,
+        SD_AGE: r.SD_AGE,
+        Z_AGE: r.Z_AGE,
+        DT_PREV: r.DT_PREV,
+        DELTA_PREV_ANNUAL: r.DELTA_PREV_ANNUAL,
+        DT_NEXT: r.DT_NEXT,
+        DELTA_NEXT_ANNUAL: r.DELTA_NEXT_ANNUAL,
+        DELTA_OVERALL_ANNUAL: r.DELTA_OVERALL_ANNUAL,
+        PATIENT_MAX_CAT: r.PATIENT_MAX_CAT
+      })), 'Observations');
+    });
+
+    els.exportSummaryBtn.addEventListener('click', () => {
+      const cols = ['rank', 'PID', 'n', 'avgZ', 'minAge', 'maxAge', 'ageSpan', 'overallDeltaAnnual', 'maxCat', 'firstValue', 'lastValue', 'lastAge', 'zString', 'catString', 'deltaPrevString', 'deltaNextString'];
+      const lines = [cols.join(',')];
+      for (const s of state.summaries) {
+        lines.push(cols.map(c => csvEscape(s[c])).join(','));
+      }
+      downloadText('patient_summary.csv', lines.join('\n'), 'text/csv;charset=utf-8');
+    });
+
+    els.exportSummaryXlsxBtn.addEventListener('click', () => {
+      downloadXlsx('patient_summary.xlsx', state.summaries.map(s => ({
+        rank: s.rank,
+        PID: s.PID,
+        n: s.n,
+        avgZ: s.avgZ,
+        minAge: s.minAge,
+        maxAge: s.maxAge,
+        ageSpan: s.ageSpan,
+        overallDeltaAnnual: s.overallDeltaAnnual,
+        maxCat: s.maxCat,
+        firstValue: s.firstValue,
+        lastValue: s.lastValue,
+        lastAge: s.lastAge,
+        zString: s.zString,
+        catString: s.catString,
+        deltaPrevString: s.deltaPrevString,
+        deltaNextString: s.deltaNextString
+      })), 'Summary');
+    });
+
+    window.addEventListener('beforeunload', stopPlayback);
+  </script>
+</body>
+</html>
